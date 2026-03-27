@@ -164,56 +164,7 @@ public class ExpectedOutcomeAgent
         }
     }
 
-    public Node minimax(Node node)
-    {
-        // uncomment if you want to see the tree being made
-        // System.out.println(this.getTabs(node) + "Node(currentPlayer=" + node.getCurrentPlayerType() +
-        //      " isTerminal=" + node.isTerminal() + " lastMove=" + node.getLastMove() + ")" + "children: {" + node.getChildren() + "}");
-
-        System.out.println();
-        System.out.println("player type is: " + node.getMyPlayerType());
-        System.out.println("maxxing player: " + (node.getCurrentPlayerType()==node.getMyPlayerType()));
-        System.out.println(); 
-
-        if (node.isTerminal()) {
-            node.setUtilityValue(node.getTerminalUtility());
-            return node;
-        }
-        if (node.getDepth() == this.maxDepth) {
-            double h = Heuristics.calculateHeuristicValue(node);
-            node.setUtilityValue(h);
-            return node;
-        }
     
-        
-
-        if (node.getCurrentPlayerType()==node.getMyPlayerType()) {
-            Node bestChild = null;
-            double maxUtility = Integer.MIN_VALUE;
-            for (Node c : node.getChildren()) {
-                Node result = minimax(c);
-                if (result.getUtilityValue() > maxUtility) {
-                    maxUtility = result.getUtilityValue();
-                    bestChild = c;
-                }
-            }
-            node.setUtilityValue(maxUtility);
-            return bestChild;
-
-        } else {
-            Node bestChild = null;
-            double minUtility = Integer.MAX_VALUE;
-            for (Node c : node.getChildren()) {
-                Node result = minimax(c);
-                if (result.getUtilityValue() < minUtility) {
-                    minUtility = result.getUtilityValue();
-                    bestChild = c;
-                }
-            }
-            node.setUtilityValue(minUtility);
-            return bestChild;
-        }
-    }
     
     @Override
     public Node search(final GameView game, final Integer drawnCardIdx) {
