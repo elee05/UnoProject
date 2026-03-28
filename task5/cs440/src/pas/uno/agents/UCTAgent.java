@@ -53,6 +53,19 @@ public class UCTAgent
         super(playerIdx, maxThinkingTimeInMS);
     }
 
+    private Color getRandomColor() {
+        Color[] colors = {Color.RED, Color.BLUE, Color.GREEN, Color.YELLOW};
+        return colors[this.getRandom().nextInt(colors.length)];
+    }
+
+    private Move createMoveForCard(Card card, int cardIdx) {
+        if (card.isWild()) {
+            return Move.createMove(this, cardIdx, getRandomColor());
+        } else {
+            return Move.createMove(this, cardIdx);
+        }
+    }
+
     @Override
     public Node search(final GameView game,
                        final Integer drawnCardIdx)
@@ -69,32 +82,21 @@ public class UCTAgent
         
         int iterations = 0;
         while (System.currentTimeMillis() - startTime < maxTime) {
-            // 1. Selection + Expansion
             UCTNode selected = select(root);
-            
-            // 2. Simulation
             double result = simulate(selected);
-            
-            // 3. Backpropagation
             backpropagate(selected, result);
-            
             iterations++;
         }
         
         return root;
     }
     
-    /**
-     * Select a node using UCB, expanding as we go
-     */
     private UCTNode select(UCTNode node) {
         while (true) {
-            // If node is terminal, return it
             if (node.isTerminal()) {
                 return node;
             }
             
-            // Get all possible moves from this node
             GameView game = node.getGameView();
             Game tempGame = new Game(game);
             Hand hand = tempGame.getHand(node.getLogicalPlayerIdx());
@@ -104,33 +106,23 @@ public class UCTAgent
                 return node;
             }
             
-            // Collect all children
             List<UCTNode> children = new ArrayList<>();
-            List<Move> allMoves = new ArrayList<>();
             
             for (int idx : legalMoveIndices) {
                 Card card = hand.getCard(idx);
-                Move move;
-                if (card.isWild()) {
-                    Color[] colors = {Color.RED, Color.BLUE, Color.GREEN, Color.YELLOW};
-                    Color chosenColor = colors[this.getRandom().nextInt(colors.length)];
-                    move = Move.createMove(this, idx, chosenColor);
-                } else {
-                    move = Move.createMove(this, idx);
-                }
-                allMoves.add(move);
+                Move move = createMoveForCard(card, idx);
                 UCTNode child = (UCTNode) node.getChild(move);
                 children.add(child);
             }
             
-            // Check if any child has zero visits
+            // Check for unvisited children
             for (UCTNode child : children) {
                 if (child.getStateCount() == 0) {
-                    return child; // Expand this unvisited child
+                    return child;
                 }
             }
             
-            // Otherwise, select the child with highest UCB value
+            // Select best child by UCB
             UCTNode bestChild = null;
             double bestUCB = Double.NEGATIVE_INFINITY;
             double parentVisits = node.getStateCount();
@@ -138,8 +130,6 @@ public class UCTAgent
             for (UCTNode child : children) {
                 double qValue = child.getQValue(0);
                 long childVisits = child.getStateCount();
-                
-                // childVisits is > 0 here because we checked above
                 double ucb = qValue + EXPLORATION_CONSTANT * Math.sqrt(2.0 * Math.log(parentVisits) / childVisits);
                 
                 if (ucb > bestUCB) {
@@ -155,9 +145,6 @@ public class UCTAgent
         }
     }
     
-    /**
-     * Run a random simulation from a node using heuristic
-     */
     private double simulate(UCTNode node) {
         if (node.isTerminal()) {
             GameView game = node.getGameView();
@@ -165,7 +152,7 @@ public class UCTAgent
             return playerHand.size() == 0 ? 1.0 : 0.0;
         }
         
-        // Use heuristic: get the best possible card value from the current state
+        // Use heuristic evaluation
         GameView game = node.getGameView();
         Game tempGame = new Game(game);
         Hand hand = tempGame.getHand(node.getLogicalPlayerIdx());
@@ -187,9 +174,6 @@ public class UCTAgent
         return bestValue;
     }
     
-    /**
-     * Evaluate card value for heuristic
-     */
     private double evaluateCardValue(Card card) {
         if (card.value() == Value.WILD_DRAW_FOUR) return 1.0;
         if (card.value() == Value.DRAW_TWO) return 0.9;
@@ -198,9 +182,6 @@ public class UCTAgent
         return 0.5;
     }
     
-    /**
-     * Backpropagate result up the tree
-     */
     private void backpropagate(UCTNode node, double result) {
         UCTNode current = node;
         while (current != null) {
@@ -235,16 +216,7 @@ public class UCTAgent
             for (int i = 0; i < movesList.size(); i++) {
                 int cardIdx = movesList.get(i);
                 Card card = hand.getCard(cardIdx);
-                
-                Move move;
-                if (card.isWild()) {
-                    Color[] colors = {Color.RED, Color.BLUE, Color.GREEN, Color.YELLOW};
-                    Color chosenColor = colors[this.getRandom().nextInt(colors.length)];
-                    move = Move.createMove(this, cardIdx, chosenColor);
-                } else {
-                    move = Move.createMove(this, cardIdx);
-                }
-                
+                Move move = createMoveForCard(card, cardIdx);
                 UCTNode child = (UCTNode) node.getChild(move);
                 double qValue = child.getQValue(0);
                 
@@ -257,26 +229,13 @@ public class UCTAgent
             if (bestIdx >= 0) {
                 int cardIdx = movesList.get(bestIdx);
                 Card card = hand.getCard(cardIdx);
-                
-                if (card.isWild()) {
-                    Color[] colors = {Color.RED, Color.BLUE, Color.GREEN, Color.YELLOW};
-                    Color chosenColor = colors[this.getRandom().nextInt(colors.length)];
-                    return Move.createMove(this, cardIdx, chosenColor);
-                } else {
-                    return Move.createMove(this, cardIdx);
-                }
+                return createMoveForCard(card, cardIdx);
             }
             
             // Fallback: return first legal move
             int firstIdx = movesList.get(0);
             Card firstCard = hand.getCard(firstIdx);
-            if (firstCard.isWild()) {
-                Color[] colors = {Color.RED, Color.BLUE, Color.GREEN, Color.YELLOW};
-                Color chosenColor = colors[this.getRandom().nextInt(colors.length)];
-                return Move.createMove(this, firstIdx, chosenColor);
-            } else {
-                return Move.createMove(this, firstIdx);
-            }
+            return createMoveForCard(firstCard, firstIdx);
         }
         else if (state == Node.NodeState.NO_LEGAL_MOVES_UNRESOLVED_CARDS_PRESENT) {
             return null;
