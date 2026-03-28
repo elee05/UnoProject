@@ -1,0 +1,215 @@
+package src.pas.uno.agents;
+
+
+// SYSTEM IMPORTS
+import edu.bu.pas.uno.Card;
+import edu.bu.pas.uno.Game;
+import edu.bu.pas.uno.Game.GameView;
+import edu.bu.pas.uno.Hand;
+import edu.bu.pas.uno.Hand.HandView;
+import edu.bu.pas.uno.agents.MCTSAgent;
+import edu.bu.pas.uno.enums.Color;
+import edu.bu.pas.uno.enums.Value;
+import edu.bu.pas.uno.moves.Move;
+import edu.bu.pas.uno.tree.Node;
+
+import java.util.Random;
+import java.util.Set;
+import java.util.List;
+import java.util.ArrayList;
+
+
+public class ExpectedOutcomeAgent
+    extends MCTSAgent
+{
+
+    public static class MCTSNode
+        extends Node
+    {
+        public MCTSNode(final GameView game,
+                        final int logicalPlayerIdx,
+                        final Node parent)
+        {
+            super(game, logicalPlayerIdx, parent);
+        }
+
+        @Override
+        public Node getChild(final Move move)
+        {
+            System.out.println("  [DEBUG] getChild() called");
+            Game game = new Game(this.getGameView());
+            game.resolveMove(move);
+            GameView newGameView = game.getView(this.getLogicalPlayerIdx());
+            int nextPlayerIdx = newGameView.getCurrentMoveIdx();
+            System.out.println("  [DEBUG] getChild() returning");
+            return new MCTSNode(newGameView, nextPlayerIdx, this);
+        }
+    }
+
+    public ExpectedOutcomeAgent(final int playerIdx,
+                                final long maxThinkingTimeInMS)
+    {
+        super(playerIdx, maxThinkingTimeInMS);
+    }
+
+    private String formatCard(Card card) {
+        if (card == null) return "null";
+        if (card.isWild()) {
+            if (card.value() == Value.WILD_DRAW_FOUR) return "WILD DRAW FOUR";
+            return "WILD";
+        }
+        if (card.value() == Value.SKIP) return card.color() + " SKIP";
+        if (card.value() == Value.REVERSE) return card.color() + " REVERSE";
+        if (card.value() == Value.DRAW_TWO) return card.color() + " DRAW TWO";
+        return card.color() + " " + card.value();
+    }
+
+    @Override
+    public Node search(final GameView game,
+                       final Integer drawnCardIdx)
+    {
+        //int currentPlayer = game.getCurrentMoveIdx();
+
+
+        int currentPlayer = game.getPlayerOrder().getCurrentLogicalPlayerIdx();  // CORRECT - returns current player index
+                                                                                 //
+                                                                                 //
+        System.out.println("\n========== TURN " + game.getCurrentMoveIdx() + " ==========");
+        System.out.println("[1] search() START for player " + currentPlayer);
+        
+        System.out.println("[2] Getting top card...");
+        Card topCard = game.getLastPlayedCard();
+        System.out.println("[3] Top card: " + formatCard(topCard));
+        
+        System.out.println("[4] Getting current color...");
+        System.out.println("[5] Current color: " + game.getCurrentColor());
+        
+        System.out.println("[6] Getting unresolved cards...");
+        System.out.println("[7] Unresolved cards: " + game.getUnresolvedCards().size());
+        
+        System.out.println("[8] Getting hand view...");
+        System.out.println("SUB DEBUG current player: " + currentPlayer);
+        HandView handView = game.getHandView(currentPlayer);
+        System.out.println("[9] Hand size: " + handView.size());
+        
+        System.out.println("[10] Printing hand...");
+        System.out.println("Player " + currentPlayer + " hand (" + handView.size() + " cards):");
+        for (int i = 0; i < handView.size(); i++) {
+            Card card = handView.getCard(i);
+            System.out.println("  [" + i + "] " + formatCard(card));
+        }
+        
+        System.out.println("[11] Creating MCTSNode root...");
+        MCTSNode root = new MCTSNode(game, currentPlayer, null);
+        
+        System.out.println("[12] Creating tempGame for legal moves...");
+        Game tempGame = new Game(game);
+        
+        System.out.println("[13] Getting hand from tempGame...");
+        Hand hand = tempGame.getHand(currentPlayer);
+        
+        System.out.println("[14] Calling hand.getLegalMoves()...");
+        Set<Integer> legalMoveIndices = hand.getLegalMoves(tempGame);
+        System.out.println("[15] Legal move indices: " + legalMoveIndices);
+        
+        if (legalMoveIndices == null || legalMoveIndices.isEmpty()) {
+            System.out.println("[16] No legal moves found! Returning root");
+            return root;
+        }
+        
+        System.out.println("[17] Assigning Q-values...");
+        List<Integer> movesList = new ArrayList<>(legalMoveIndices);
+        for (int i = 0; i < movesList.size(); i++) {
+            int idx = movesList.get(i);
+            Card card = hand.getCard(idx);
+            float value = evaluateCardValue(card);
+            System.out.println("  Move " + i + ": card " + formatCard(card) + " (value " + value + ")");
+            root.setQValueTotal(i, value);
+            root.setQCount(i, 1);
+        }
+        
+        System.out.println("[18] search() END");
+        System.out.println("=====================================\n");
+        return root;
+    }
+    
+    private float evaluateCardValue(Card card) {
+        if (card.value() == Value.WILD_DRAW_FOUR) return 1.0f;
+        if (card.value() == Value.DRAW_TWO) return 0.9f;
+        if (card.isWild()) return 0.8f;
+        if (card.value() == Value.SKIP || card.value() == Value.REVERSE) return 0.7f;
+        return 0.5f;
+    }
+
+    @Override
+    public Move argmaxQValues(final Node node)
+    {
+        System.out.println("\n[DEBUG] argmaxQValues() START");
+        Node.NodeState state = node.getNodeState();
+        System.out.println("[DEBUG] Node state: " + state);
+        
+        if (state == Node.NodeState.HAS_LEGAL_MOVES) {
+            List<Integer> moveIndices = node.getOrderedLegalMoves();
+            System.out.println("[DEBUG] moveIndices from node: " + moveIndices);
+            
+            if (moveIndices == null || moveIndices.isEmpty()) {
+                System.out.println("[DEBUG] No move indices, returning null");
+                return null;
+            }
+            
+            // Find best Q-value
+            int bestIdx = -1;
+            float bestQ = Float.NEGATIVE_INFINITY;
+            for (int i = 0; i < moveIndices.size(); i++) {
+                float q = node.getQValue(i);
+                System.out.println("[DEBUG] Q-value[" + i + "] = " + q);
+                if (q > bestQ) {
+                    bestQ = q;
+                    bestIdx = i;
+                }
+            }
+            System.out.println("[DEBUG] Best index: " + bestIdx);
+            
+            if (bestIdx >= 0) {
+                System.out.println("[DEBUG] Getting game view...");
+                GameView game = node.getGameView();
+                System.out.println("[DEBUG] Creating tempGame...");
+                Game tempGame = new Game(game);
+                System.out.println("[DEBUG] Getting hand...");
+                Hand hand = tempGame.getHand(node.getLogicalPlayerIdx());
+                System.out.println("[DEBUG] Getting legal moves...");
+                Set<Integer> legalMoves = hand.getLegalMoves(tempGame);
+                System.out.println("[DEBUG] Legal moves: " + legalMoves);
+                
+                if (legalMoves != null && bestIdx < legalMoves.size()) {
+                    List<Integer> movesList = new ArrayList<>(legalMoves);
+                    int cardIdx = movesList.get(bestIdx);
+                    Card card = hand.getCard(cardIdx);
+                    
+                    System.out.println("[DEBUG] Playing: " + formatCard(card));
+                    
+                    if (card.isWild()) {
+                        System.out.println("[DEBUG] Returning wild move with RED");
+                        return Move.createMove(this, cardIdx, Color.RED);
+                    } else {
+                        System.out.println("[DEBUG] Returning regular move");
+                        return Move.createMove(this, cardIdx);
+                    }
+                }
+            }
+            System.out.println("[DEBUG] Returning null");
+            return null;
+        }
+        else if (state == Node.NodeState.NO_LEGAL_MOVES_UNRESOLVED_CARDS_PRESENT) {
+            System.out.println("[DEBUG] NO_LEGAL_MOVES_UNRESOLVED_CARDS_PRESENT - returning null");
+            return null;
+        }
+        else if (state == Node.NodeState.NO_LEGAL_MOVES_MAY_PLAY_DRAWN_CARD) {
+            System.out.println("[DEBUG] NO_LEGAL_MOVES_MAY_PLAY_DRAWN_CARD - returning null (keep card)");
+            return null;
+        }
+        
+        System.out.println("[DEBUG] Returning null");
+        return null;
+    }
+}
